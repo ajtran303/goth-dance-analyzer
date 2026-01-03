@@ -1,4 +1,4 @@
-# goth-dance-analyzer
+# Goth Dance Analyzer
 
 Analyze and compare dance styles using MediaPipe pose estimation.
 
@@ -87,6 +87,23 @@ Outputs:
 - `analysis/charts/comparison_radar.png` — radar chart
 - `analysis/charts/comparison_bars.png` — bar chart
 
+### 5. Export Video with Skeleton Overlay
+
+Render skeleton and live metrics onto original footage.
+
+```bash
+# Single video
+python scripts/export_video.py recordings/alice/alice_gallowdance.mp4
+
+# All videos
+python scripts/export_video.py --batch recordings
+
+# Without metrics panel
+python scripts/export_video.py --no-metrics recordings/alice/alice_gallowdance.mp4
+```
+
+Saves to: `exports/<video_name>_skeleton.mp4`
+
 ## Metrics
 
 | Metric           | Description                    |
@@ -104,6 +121,7 @@ Outputs:
 2. `python scripts/capture.py` — record each dancer
 3. `python scripts/extract_skeleton.py --batch recordings` — extract all
 4. `python scripts/analyze.py` — compare everyone
+5. `python scripts/export_video.py --batch recordings` — export shareable videos
 
 ## License
 
