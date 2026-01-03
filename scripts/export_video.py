@@ -1,3 +1,5 @@
+# pyright: reportAttributeAccessIssue=false
+
 """
 Export video with skeleton overlay.
 Renders pose landmarks onto original footage for shareable clips.
