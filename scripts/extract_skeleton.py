@@ -167,13 +167,11 @@ def batch_extract(input_dir="recordings", output_dir="skeleton_data"):
         output_dir: Directory for output JSON files
     """
     
-    # Find all video files
-    video_extensions = ['.mp4', '.mov', '.avi', '.mkv']
     video_files = []
     
     for root, dirs, files in os.walk(input_dir):
         for file in files:
-            if any(file.lower().endswith(ext) for ext in video_extensions):
+            if file.lower().endswith('.mp4'):
                 video_files.append(os.path.join(root, file))
     
     if not video_files:
