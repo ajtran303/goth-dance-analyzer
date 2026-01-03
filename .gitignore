@@ -1,2 +1,12 @@
 .python-version
 venv
+
+recordings/
+setlist/
+
+skeleton_data/
+analysis/
+
+__pycache__/
+
+.DS_Store
