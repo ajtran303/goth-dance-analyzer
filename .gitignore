@@ -10,3 +10,5 @@ analysis/
 __pycache__/
 
 .DS_Store
+
+pose_landmarker.task
