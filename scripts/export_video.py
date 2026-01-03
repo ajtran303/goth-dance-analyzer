@@ -210,6 +210,36 @@ def calculate_rolling_metrics(frames_data, current_idx, window_size=60):
     else:
         upper_body_focus = 1.0
     
+    # Calculate rhythm metrics using FFT on velocity signal
+    combined_vel = (left_movement + right_movement) / 2
+    rhythm_strength = 0.0
+    movement_bpm = 0.0
+
+    if len(combined_vel) >= 30:  # Need enough samples for FFT
+        fps = 30.0  # Assume 30fps for rolling calculation
+        fft_result = np.fft.rfft(combined_vel)
+        frequencies = np.fft.rfftfreq(len(combined_vel), 1/fps)
+        magnitudes = np.abs(fft_result)
+
+        # Focus on dance-relevant frequency range: 0.5-4 Hz (30-240 BPM)
+        min_freq, max_freq = 0.5, 4.0
+        dance_band_mask = (frequencies >= min_freq) & (frequencies <= max_freq)
+
+        if np.any(dance_band_mask):
+            dance_freqs = frequencies[dance_band_mask]
+            dance_mags = magnitudes[dance_band_mask]
+
+            peak_idx = np.argmax(dance_mags)
+            dominant_freq = dance_freqs[peak_idx]
+            peak_magnitude = dance_mags[peak_idx]
+
+            movement_bpm = dominant_freq * 60
+
+            mean_magnitude = np.mean(dance_mags)
+            if mean_magnitude > 0:
+                rhythm_strength = min((peak_magnitude / mean_magnitude - 1) / 5, 1.0)
+                rhythm_strength = max(0, rhythm_strength)
+
     # Scale metrics to roughly 0-1 range for display
     return {
         'arm_velocity': min(arm_velocity * 50, 1.0),
@@ -217,20 +247,22 @@ def calculate_rolling_metrics(frames_data, current_idx, window_size=60):
         'vertical_motion': min(vertical_motion * 50, 1.0),
         'symmetry': symmetry,
         'stillness_ratio': stillness_ratio,
-        'upper_body_focus': upper_body_focus
+        'upper_body_focus': upper_body_focus,
+        'rhythm_strength': rhythm_strength,
+        'movement_bpm': movement_bpm
     }
 
 
 def draw_metrics_panel(frame, metrics, x=10, y_start=None):
-    """Draw all 6 metrics as a panel with bars."""
+    """Draw all metrics as a panel with bars."""
     if metrics is None:
         return frame
-    
+
     height, width = frame.shape[:2]
-    
+
     if y_start is None:
-        y_start = height - 160
-    
+        y_start = height - 200
+
     labels = [
         ('Arm Velocity', metrics['arm_velocity']),
         ('Movement Range', metrics['movement_range']),
@@ -238,33 +270,34 @@ def draw_metrics_panel(frame, metrics, x=10, y_start=None):
         ('Symmetry', metrics['symmetry']),
         ('Stillness', metrics['stillness_ratio']),
         ('Upper Body', metrics['upper_body_focus']),
+        ('Rhythm Strength', metrics.get('rhythm_strength', 0)),
     ]
-    
+
     bar_width = 150
     bar_height = 15
     spacing = 22
-    
+
     # Draw background
-    panel_height = len(labels) * spacing + 10
-    cv2.rectangle(frame, 
+    panel_height = len(labels) * spacing + 35
+    cv2.rectangle(frame,
                   (x - 5, y_start - 5),
                   (x + bar_width + 100, y_start + panel_height),
                   (0, 0, 0), -1)
-    
+
     for i, (label, value) in enumerate(labels):
         y = y_start + i * spacing
-        
+
         # Label
-        cv2.putText(frame, label, (x, y + 12), 
+        cv2.putText(frame, label, (x, y + 12),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-        
+
         # Bar background
         bar_x = x + 95
-        cv2.rectangle(frame, 
+        cv2.rectangle(frame,
                       (bar_x, y),
                       (bar_x + bar_width, y + bar_height),
                       (50, 50, 50), -1)
-        
+
         # Bar fill
         fill_width = int(bar_width * min(value, 1.0))
         if fill_width > 0:
@@ -277,11 +310,18 @@ def draw_metrics_panel(frame, metrics, x=10, y_start=None):
                           (bar_x, y),
                           (bar_x + fill_width, y + bar_height),
                           color, -1)
-        
+
         # Value text
         cv2.putText(frame, f"{value:.2f}", (bar_x + bar_width + 5, y + 12),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-    
+
+    # Draw BPM as separate text display
+    bpm = metrics.get('movement_bpm', 0)
+    bpm_y = y_start + len(labels) * spacing + 5
+    cv2.putText(frame, f"Movement BPM: {bpm:.0f}",
+                (x, bpm_y + 12),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
     return frame
 
 

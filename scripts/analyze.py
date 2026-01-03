@@ -61,6 +61,109 @@ def calculate_velocity(positions):
     return np.mean(velocities) if velocities else 0
 
 
+def get_velocity_timeseries(positions):
+    """Get velocity as a time series (for FFT analysis)."""
+    velocities = []
+    for i in range(1, len(positions)):
+        if positions[i] is not None and positions[i-1] is not None:
+            dx = positions[i][0] - positions[i-1][0]
+            dy = positions[i][1] - positions[i-1][1]
+            velocity = np.sqrt(dx**2 + dy**2)
+            velocities.append(velocity)
+        else:
+            # Interpolate with 0 for missing frames to maintain timing
+            velocities.append(0)
+    return np.array(velocities)
+
+
+def calculate_rhythm_metrics(skeleton_data, fps=30.0):
+    """
+    Calculate rhythm metrics using FFT frequency domain analysis.
+
+    Analyzes the periodicity of arm movements to detect rhythmic patterns.
+
+    Returns dict with:
+        - movement_bpm: Dominant movement frequency in beats per minute
+        - rhythm_strength: How pronounced the rhythm is (0-1)
+        - rhythm_consistency: How stable the rhythm is over time (0-1)
+    """
+    # Get wrist positions for arm movement analysis
+    left_wrist = get_landmark_positions(skeleton_data, LEFT_WRIST)
+    right_wrist = get_landmark_positions(skeleton_data, RIGHT_WRIST)
+
+    # Get velocity time series
+    left_vel = get_velocity_timeseries(left_wrist)
+    right_vel = get_velocity_timeseries(right_wrist)
+
+    # Combine arm velocities
+    combined_vel = (left_vel + right_vel) / 2
+
+    if len(combined_vel) < 60:  # Need at least 2 seconds of data
+        return None
+
+    # Apply FFT
+    fft_result = np.fft.rfft(combined_vel)
+    frequencies = np.fft.rfftfreq(len(combined_vel), 1/fps)
+    magnitudes = np.abs(fft_result)
+
+    # Focus on dance-relevant frequency range: 0.5-4 Hz (30-240 BPM)
+    min_freq, max_freq = 0.5, 4.0
+    dance_band_mask = (frequencies >= min_freq) & (frequencies <= max_freq)
+
+    if not np.any(dance_band_mask):
+        return None
+
+    dance_freqs = frequencies[dance_band_mask]
+    dance_mags = magnitudes[dance_band_mask]
+
+    # Find dominant frequency
+    peak_idx = np.argmax(dance_mags)
+    dominant_freq = dance_freqs[peak_idx]
+    peak_magnitude = dance_mags[peak_idx]
+
+    # Calculate movement BPM
+    movement_bpm = dominant_freq * 60
+
+    # Calculate rhythm strength (peak vs noise floor)
+    mean_magnitude = np.mean(dance_mags)
+    if mean_magnitude > 0:
+        rhythm_strength = min((peak_magnitude / mean_magnitude - 1) / 5, 1.0)
+        rhythm_strength = max(0, rhythm_strength)
+    else:
+        rhythm_strength = 0
+
+    # Calculate rhythm consistency using windowed analysis
+    window_size = int(fps * 4)  # 4-second windows
+    step_size = int(fps * 2)    # 2-second step
+    window_bpms = []
+
+    for start in range(0, len(combined_vel) - window_size, step_size):
+        window = combined_vel[start:start + window_size]
+        w_fft = np.fft.rfft(window)
+        w_freqs = np.fft.rfftfreq(len(window), 1/fps)
+        w_mags = np.abs(w_fft)
+
+        w_mask = (w_freqs >= min_freq) & (w_freqs <= max_freq)
+        if np.any(w_mask):
+            w_dance_freqs = w_freqs[w_mask]
+            w_dance_mags = w_mags[w_mask]
+            w_peak_idx = np.argmax(w_dance_mags)
+            window_bpms.append(w_dance_freqs[w_peak_idx] * 60)
+
+    # Consistency is inverse of coefficient of variation
+    if len(window_bpms) > 1 and np.mean(window_bpms) > 0:
+        cv = np.std(window_bpms) / np.mean(window_bpms)
+        rhythm_consistency = max(0, 1 - cv)
+    else:
+        rhythm_consistency = 0
+
+    return {
+        'movement_bpm': float(movement_bpm),
+        'rhythm_strength': float(rhythm_strength),
+        'rhythm_consistency': float(rhythm_consistency)
+    }
+
+
 def calculate_metrics(skeleton_data):
     """
     Calculate all dance metrics from skeleton data.
@@ -158,7 +261,11 @@ def calculate_metrics(skeleton_data):
     else:
         upper_body_focus = 1.0
     
-    return {
+    # Get rhythm metrics from FFT analysis
+    fps = skeleton_data['metadata'].get('fps', 30.0)
+    rhythm_metrics = calculate_rhythm_metrics(skeleton_data, fps)
+
+    metrics = {
         'arm_velocity': float(arm_velocity),
         'movement_range': float(movement_range),
         'vertical_motion': float(vertical_motion),
@@ -166,6 +273,16 @@ def calculate_metrics(skeleton_data):
         'stillness_ratio': float(stillness_ratio),
         'upper_body_focus': float(upper_body_focus)
     }
+
+    # Add rhythm metrics if available
+    if rhythm_metrics:
+        metrics.update(rhythm_metrics)
+    else:
+        metrics['movement_bpm'] = 0.0
+        metrics['rhythm_strength'] = 0.0
+        metrics['rhythm_consistency'] = 0.0
+
+    return metrics
 
 
 def normalize_metrics(all_metrics):
@@ -222,17 +339,18 @@ def find_most_similar(normalized_metrics):
 
 def create_radar_chart(metrics_dict, title="Dance Style Comparison", output_path=None):
     """Create radar chart comparing multiple dancers."""
-    labels = ['Arm Velocity', 'Movement Range', 'Vertical Motion', 
-              'Symmetry', 'Stillness', 'Upper Body Focus']
+    labels = ['Arm Velocity', 'Movement Range', 'Vertical Motion',
+              'Symmetry', 'Stillness', 'Upper Body Focus',
+              'Rhythm Strength', 'Rhythm Consistency']
     num_vars = len(labels)
-    
+
     angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
     angles += angles[:1]
-    
+
     fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
-    
+
     colors = plt.cm.Dark2(np.linspace(0, 1, len(metrics_dict)))
-    
+
     for (name, metrics), color in zip(metrics_dict.items(), colors):
         values = [
             metrics['arm_velocity'],
@@ -240,40 +358,43 @@ def create_radar_chart(metrics_dict, title="Dance Style Comparison", output_path
             metrics['vertical_motion'],
             metrics['symmetry'],
             metrics['stillness_ratio'],
-            metrics['upper_body_focus']
+            metrics['upper_body_focus'],
+            metrics.get('rhythm_strength', 0),
+            metrics.get('rhythm_consistency', 0)
         ]
         values += values[:1]
-        
+
         ax.plot(angles, values, 'o-', linewidth=2, label=name, color=color)
         ax.fill(angles, values, alpha=0.15, color=color)
-    
+
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, size=12)
+    ax.set_xticklabels(labels, size=10)
     ax.set_ylim(0, 1)
     ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
     ax.set_title(title, size=16, y=1.08)
-    
+
     plt.tight_layout()
-    
+
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         print(f"Saved chart: {output_path}")
-    
+
     plt.show()
 
 
 def create_bar_comparison(metrics_dict, output_path=None):
     """Create grouped bar chart comparing dancers."""
-    labels = ['Arm\nVelocity', 'Movement\nRange', 'Vertical\nMotion', 
-              'Symmetry', 'Stillness', 'Upper Body\nFocus']
-    
+    labels = ['Arm\nVelocity', 'Movement\nRange', 'Vertical\nMotion',
+              'Symmetry', 'Stillness', 'Upper Body\nFocus',
+              'Rhythm\nStrength', 'Rhythm\nConsistency']
+
     x = np.arange(len(labels))
     width = 0.8 / len(metrics_dict)
-    
-    fig, ax = plt.subplots(figsize=(14, 6))
-    
+
+    fig, ax = plt.subplots(figsize=(16, 6))
+
     colors = plt.cm.Dark2(np.linspace(0, 1, len(metrics_dict)))
-    
+
     for i, ((name, metrics), color) in enumerate(zip(metrics_dict.items(), colors)):
         values = [
             metrics['arm_velocity'],
@@ -281,24 +402,26 @@ def create_bar_comparison(metrics_dict, output_path=None):
             metrics['vertical_motion'],
             metrics['symmetry'],
             metrics['stillness_ratio'],
-            metrics['upper_body_focus']
+            metrics['upper_body_focus'],
+            metrics.get('rhythm_strength', 0),
+            metrics.get('rhythm_consistency', 0)
         ]
         offset = (i - len(metrics_dict) / 2 + 0.5) * width
         ax.bar(x + offset, values, width, label=name, color=color)
-    
+
     ax.set_ylabel('Normalized Score')
     ax.set_title('Dance Style Comparison')
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.legend()
     ax.set_ylim(0, 1.1)
-    
+
     plt.tight_layout()
-    
+
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         print(f"Saved chart: {output_path}")
-    
+
     plt.show()
 
 
@@ -375,36 +498,45 @@ def analyze_directory(skeleton_dir="skeleton_data", output_dir="analysis"):
     print("\n" + "="*50)
     print("ANALYSIS SUMMARY")
     print("="*50)
-    
+
     for name, metrics in normalized.items():
+        raw_metrics = all_metrics[name]
         print(f"\n{name}:")
-        print(f"  Arm Velocity:     {'█' * int(metrics['arm_velocity'] * 20):<20} {metrics['arm_velocity']:.2f}")
-        print(f"  Movement Range:   {'█' * int(metrics['movement_range'] * 20):<20} {metrics['movement_range']:.2f}")
-        print(f"  Vertical Motion:  {'█' * int(metrics['vertical_motion'] * 20):<20} {metrics['vertical_motion']:.2f}")
-        print(f"  Symmetry:         {'█' * int(metrics['symmetry'] * 20):<20} {metrics['symmetry']:.2f}")
-        print(f"  Stillness:        {'█' * int(metrics['stillness_ratio'] * 20):<20} {metrics['stillness_ratio']:.2f}")
-        print(f"  Upper Body Focus: {'█' * int(metrics['upper_body_focus'] * 20):<20} {metrics['upper_body_focus']:.2f}")
+        print(f"  Arm Velocity:       {'█' * int(metrics['arm_velocity'] * 20):<20} {metrics['arm_velocity']:.2f}")
+        print(f"  Movement Range:     {'█' * int(metrics['movement_range'] * 20):<20} {metrics['movement_range']:.2f}")
+        print(f"  Vertical Motion:    {'█' * int(metrics['vertical_motion'] * 20):<20} {metrics['vertical_motion']:.2f}")
+        print(f"  Symmetry:           {'█' * int(metrics['symmetry'] * 20):<20} {metrics['symmetry']:.2f}")
+        print(f"  Stillness:          {'█' * int(metrics['stillness_ratio'] * 20):<20} {metrics['stillness_ratio']:.2f}")
+        print(f"  Upper Body Focus:   {'█' * int(metrics['upper_body_focus'] * 20):<20} {metrics['upper_body_focus']:.2f}")
+        print(f"  Movement BPM:       {raw_metrics.get('movement_bpm', 0):.1f}")
+        print(f"  Rhythm Strength:    {'█' * int(metrics.get('rhythm_strength', 0) * 20):<20} {metrics.get('rhythm_strength', 0):.2f}")
+        print(f"  Rhythm Consistency: {'█' * int(metrics.get('rhythm_consistency', 0) * 20):<20} {metrics.get('rhythm_consistency', 0):.2f}")
 
 
 def analyze_single(skeleton_path):
     """Analyze a single skeleton file."""
     print(f"Analyzing: {skeleton_path}\n")
-    
+
     skeleton_data = load_skeleton(skeleton_path)
     metrics = calculate_metrics(skeleton_data)
-    
+
     if not metrics:
         print("Error: Insufficient data for analysis")
         return
-    
+
     print("Metrics:")
-    print(f"  Arm Velocity:     {metrics['arm_velocity']:.4f}")
-    print(f"  Movement Range:   {metrics['movement_range']:.4f}")
-    print(f"  Vertical Motion:  {metrics['vertical_motion']:.4f}")
-    print(f"  Symmetry:         {metrics['symmetry']:.4f}")
-    print(f"  Stillness Ratio:  {metrics['stillness_ratio']:.4f}")
-    print(f"  Upper Body Focus: {metrics['upper_body_focus']:.4f}")
-    
+    print(f"  Arm Velocity:       {metrics['arm_velocity']:.4f}")
+    print(f"  Movement Range:     {metrics['movement_range']:.4f}")
+    print(f"  Vertical Motion:    {metrics['vertical_motion']:.4f}")
+    print(f"  Symmetry:           {metrics['symmetry']:.4f}")
+    print(f"  Stillness Ratio:    {metrics['stillness_ratio']:.4f}")
+    print(f"  Upper Body Focus:   {metrics['upper_body_focus']:.4f}")
+
+    print("\nRhythm Analysis (FFT):")
+    print(f"  Movement BPM:       {metrics.get('movement_bpm', 0):.1f}")
+    print(f"  Rhythm Strength:    {metrics.get('rhythm_strength', 0):.4f}")
+    print(f"  Rhythm Consistency: {metrics.get('rhythm_consistency', 0):.4f}")
+
     print(f"\nDetection rate: {skeleton_data['metadata'].get('detection_rate', 0):.1%}")
 
 
