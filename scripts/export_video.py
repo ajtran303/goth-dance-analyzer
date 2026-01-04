@@ -253,74 +253,79 @@ def calculate_rolling_metrics(frames_data, current_idx, window_size=60):
     }
 
 
+def calculate_summary_scores(metrics):
+    """Calculate summary scores from raw metrics."""
+    energy = (metrics['arm_velocity'] + metrics['movement_range'] + metrics['vertical_motion']) / 3
+    control = (metrics['symmetry'] + 0) / 2  # No rhythm_consistency in rolling
+    groove = metrics.get('rhythm_strength', 0)
+    flow = 1 - metrics['stillness_ratio']
+    return {
+        'Energy': energy,
+        'Control': control,
+        'Groove': groove,
+        'Flow': flow
+    }
+
+
 def draw_metrics_panel(frame, metrics, x=10, y_start=None):
-    """Draw all metrics as a panel with bars."""
+    """Draw clean summary panel with 4 scores + BPM."""
     if metrics is None:
         return frame
 
     height, width = frame.shape[:2]
 
     if y_start is None:
-        y_start = height - 200
+        y_start = height - 130
 
-    labels = [
-        ('Arm Velocity', metrics['arm_velocity']),
-        ('Movement Range', metrics['movement_range']),
-        ('Vertical Motion', metrics['vertical_motion']),
-        ('Symmetry', metrics['symmetry']),
-        ('Stillness', metrics['stillness_ratio']),
-        ('Upper Body', metrics['upper_body_focus']),
-        ('Rhythm Strength', metrics.get('rhythm_strength', 0)),
+    # Calculate summary scores
+    summary = calculate_summary_scores(metrics)
+    bpm = metrics.get('movement_bpm', 0)
+
+    scores = [
+        ('Energy', summary['Energy'], (0, 165, 255)),    # Orange
+        ('Control', summary['Control'], (255, 200, 0)),  # Cyan
+        ('Groove', summary['Groove'], (255, 0, 255)),    # Magenta
+        ('Flow', summary['Flow'], (0, 255, 200)),        # Teal
     ]
 
-    bar_width = 150
-    bar_height = 15
-    spacing = 22
+    bar_width = 100
+    bar_height = 18
+    spacing = 26
 
     # Draw background
-    panel_height = len(labels) * spacing + 35
+    panel_height = len(scores) * spacing + 30
     cv2.rectangle(frame,
                   (x - 5, y_start - 5),
-                  (x + bar_width + 100, y_start + panel_height),
+                  (x + bar_width + 75, y_start + panel_height),
                   (0, 0, 0), -1)
 
-    for i, (label, value) in enumerate(labels):
+    for i, (label, value, color) in enumerate(scores):
         y = y_start + i * spacing
 
         # Label
-        cv2.putText(frame, label, (x, y + 12),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        cv2.putText(frame, label, (x, y + 14),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
         # Bar background
-        bar_x = x + 95
+        bar_x = x + 60
         cv2.rectangle(frame,
                       (bar_x, y),
                       (bar_x + bar_width, y + bar_height),
-                      (50, 50, 50), -1)
+                      (40, 40, 40), -1)
 
         # Bar fill
         fill_width = int(bar_width * min(value, 1.0))
         if fill_width > 0:
-            # Color gradient: green to yellow to red
-            if value < 0.5:
-                color = (0, 255, int(255 * value * 2))
-            else:
-                color = (0, int(255 * (1 - value) * 2), 255)
             cv2.rectangle(frame,
                           (bar_x, y),
                           (bar_x + fill_width, y + bar_height),
                           color, -1)
 
-        # Value text
-        cv2.putText(frame, f"{value:.2f}", (bar_x + bar_width + 5, y + 12),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-
-    # Draw BPM as separate text display
-    bpm = metrics.get('movement_bpm', 0)
-    bpm_y = y_start + len(labels) * spacing + 5
-    cv2.putText(frame, f"Movement BPM: {bpm:.0f}",
+    # BPM display
+    bpm_y = y_start + len(scores) * spacing + 5
+    cv2.putText(frame, f"BPM: {bpm:.0f}",
                 (x, bpm_y + 12),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
     return frame
 
