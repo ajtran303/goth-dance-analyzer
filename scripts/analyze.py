@@ -324,21 +324,79 @@ def find_most_similar(normalized_metrics):
     names = list(normalized_metrics.keys())
     if len(names) < 2:
         return None
-    
+
     best_pair = None
     best_similarity = -1
-    
+
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
             sim = calculate_similarity(
-                normalized_metrics[names[i]], 
+                normalized_metrics[names[i]],
                 normalized_metrics[names[j]]
             )
             if sim > best_similarity:
                 best_similarity = sim
                 best_pair = (names[i], names[j])
-    
+
     return best_pair, best_similarity
+
+
+def create_similarity_matrix_pdf(normalized_metrics, output_path=None):
+    """Create similarity matrix heatmaps, one page per song."""
+    import pandas as pd
+
+    # Organize by song
+    by_song = {}
+    for name, metrics in normalized_metrics.items():
+        parts = name.split(' - ', 1)
+        dancer = parts[0]
+        song = parts[1].replace('_', ' ').title() if len(parts) > 1 else 'Unknown'
+        if song not in by_song:
+            by_song[song] = {}
+        by_song[song][dancer] = metrics
+
+    with PdfPages(output_path) as pdf:
+        for song, dancers in by_song.items():
+            dancer_names = list(dancers.keys())
+            n = len(dancer_names)
+
+            if n < 2:
+                continue
+
+            # Build similarity matrix
+            matrix = np.zeros((n, n))
+            for i in range(n):
+                for j in range(n):
+                    if i == j:
+                        matrix[i, j] = 1.0
+                    else:
+                        matrix[i, j] = calculate_similarity(
+                            dancers[dancer_names[i]],
+                            dancers[dancer_names[j]]
+                        )
+
+            df = pd.DataFrame(matrix, index=dancer_names, columns=dancer_names)
+
+            fig, ax = plt.subplots(figsize=(max(6, n * 2), max(5, n * 1.5)))
+
+            sns.heatmap(df, annot=True, fmt='.0%', cmap='YlGn',
+                        vmin=0, vmax=1, linewidths=2,
+                        annot_kws={'size': 18, 'weight': 'bold'},
+                        cbar=False, ax=ax)
+
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha='center', fontsize=14)
+            ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=14)
+
+            fig.suptitle(song, fontsize=20, fontweight='bold', y=1.02)
+            fig.text(0.5, -0.02,
+                     'Similarity = 1 − avg difference. Higher % = more alike.',
+                     ha='center', fontsize=10, style='italic', color='gray')
+
+            plt.tight_layout()
+            pdf.savefig(fig, bbox_inches='tight')
+            plt.close()
+
+    print(f"Saved PDF: {output_path}")
 
 
 def create_radar_chart(metrics_dict, title="Dance Style Comparison", output_path=None):
@@ -1080,6 +1138,11 @@ def analyze_directory(skeleton_dir="skeleton_data", output_dir="analysis"):
     # Rhythm spectrum report
     spectrum_path = os.path.join(output_dir, 'charts', 'rhythm_spectrums.pdf')
     create_spectrum_report(skeleton_files, spectrum_path)
+
+    # Similarity matrix
+    if len(normalized) >= 2:
+        similarity_path = os.path.join(output_dir, 'charts', 'similarity.pdf')
+        create_similarity_matrix_pdf(normalized, similarity_path)
     
     # Print summary
     print("\n" + "="*50)
