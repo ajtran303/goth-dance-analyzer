@@ -11,6 +11,20 @@ Analyze and compare dance styles using MediaPipe pose estimation and FFT rhythm 
 - Generates summary scores and dancer fingerprints
 - Compares dancers across songs
 
+## Setlist
+
+Default setlist (goth classics, slow to fast):
+
+| Song                    | Artist           | BPM  |
+| ----------------------- | ---------------- | ---- |
+| Bela Lugosi's Dead      | Bauhaus          | ~75  |
+| Lucretia My Reflection  | Sisters of Mercy | ~115 |
+| Cities in Dust          | Siouxsie         | ~120 |
+| Gallowdance             | Lebanon Hanover  | ~138 |
+| Love Will Tear Us Apart | Joy Division     | ~147 |
+
+Use any setlist you want — just add your music files to `setlist/` and update the song list in `scripts/capture.py`.
+
 ## Requirements
 
 - Python 3.14+
@@ -108,26 +122,26 @@ Saves to: `exports/<video_name>_skeleton.mp4`
 
 ### Raw Metrics
 
-| Metric | Description |
-|--------|-------------|
-| Arm Velocity | How fast arms move |
-| Movement Range | How big/expansive gestures are |
-| Vertical Motion | Amount of jumping/bouncing |
-| Symmetry | Left/right mirror movement |
-| Stillness Ratio | How often dancer pauses |
-| Upper Body Focus | Arms vs legs emphasis |
-| Movement BPM | Dominant rhythm frequency (via FFT) |
-| Rhythm Strength | How pronounced the rhythm is |
-| Rhythm Consistency | How stable the rhythm is over time |
+| Metric             | Description                         |
+| ------------------ | ----------------------------------- |
+| Arm Velocity       | How fast arms move                  |
+| Movement Range     | How big/expansive gestures are      |
+| Vertical Motion    | Amount of jumping/bouncing          |
+| Symmetry           | Left/right mirror movement          |
+| Stillness Ratio    | How often dancer pauses             |
+| Upper Body Focus   | Arms vs legs emphasis               |
+| Movement BPM       | Dominant rhythm frequency (via FFT) |
+| Rhythm Strength    | How pronounced the rhythm is        |
+| Rhythm Consistency | How stable the rhythm is over time  |
 
 ### Summary Scores
 
-| Score | Formula |
-|-------|---------|
-| Energy | (Arm Velocity + Movement Range + Vertical Motion) / 3 |
-| Control | (Symmetry + Rhythm Consistency) / 2 |
-| Groove | (Rhythm Strength + Rhythm Consistency) / 2 |
-| Flow | 1 - Stillness Ratio |
+| Score   | Formula                                               |
+| ------- | ----------------------------------------------------- |
+| Energy  | (Arm Velocity + Movement Range + Vertical Motion) / 3 |
+| Control | (Symmetry + Rhythm Consistency) / 2                   |
+| Groove  | (Rhythm Strength + Rhythm Consistency) / 2            |
+| Flow    | 1 - Stillness Ratio                                   |
 
 ### Dancer Archetypes
 
