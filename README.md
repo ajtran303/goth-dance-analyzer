@@ -1,13 +1,15 @@
 # Goth Dance Analyzer
 
-Analyze and compare dance styles using MediaPipe pose estimation.
+Analyze and compare dance styles using MediaPipe pose estimation and FFT rhythm detection.
 
 ## What It Does
 
 - Records dancers performing a setlist
 - Extracts skeleton data from video
-- Calculates movement metrics (arm velocity, range, symmetry, etc.)
-- Compares dancers to each other
+- Calculates movement metrics (velocity, range, symmetry, etc.)
+- Detects rhythm patterns using frequency domain analysis
+- Generates summary scores and dancer fingerprints
+- Compares dancers across songs
 
 ## Requirements
 
@@ -72,20 +74,18 @@ Calculate metrics and generate comparison charts.
 
 ```bash
 # Analyze all skeleton files
-python scripts/analyze.py
+python scripts/analyze.py --dir skeleton_data
 
 # Analyze single file
 python scripts/analyze.py skeleton_data/alice/alice_gallowdance_skeleton.json
-
-# Analyze specific directory
-python scripts/analyze.py --dir skeleton_data
 ```
 
 Outputs:
 
 - `analysis/metrics.json` — raw and normalized metrics
-- `analysis/charts/comparison_radar.png` — radar chart
-- `analysis/charts/comparison_bars.png` — bar chart
+- `analysis/charts/summary.pdf` — fingerprints + per-song summary scores
+- `analysis/charts/detailed_metrics.pdf` — per-song metric breakdown
+- `analysis/charts/rhythm_spectrums.pdf` — FFT frequency analysis
 
 ### 5. Export Video with Skeleton Overlay
 
@@ -106,21 +106,44 @@ Saves to: `exports/<video_name>_skeleton.mp4`
 
 ## Metrics
 
-| Metric           | Description                    |
-| ---------------- | ------------------------------ |
-| Arm Velocity     | How fast arms move             |
-| Movement Range   | How big/expansive gestures are |
-| Vertical Motion  | Amount of jumping/bouncing     |
-| Symmetry         | Left/right mirror movement     |
-| Stillness Ratio  | How often dancer pauses        |
-| Upper Body Focus | Arms vs legs emphasis          |
+### Raw Metrics
+
+| Metric | Description |
+|--------|-------------|
+| Arm Velocity | How fast arms move |
+| Movement Range | How big/expansive gestures are |
+| Vertical Motion | Amount of jumping/bouncing |
+| Symmetry | Left/right mirror movement |
+| Stillness Ratio | How often dancer pauses |
+| Upper Body Focus | Arms vs legs emphasis |
+| Movement BPM | Dominant rhythm frequency (via FFT) |
+| Rhythm Strength | How pronounced the rhythm is |
+| Rhythm Consistency | How stable the rhythm is over time |
+
+### Summary Scores
+
+| Score | Formula |
+|-------|---------|
+| Energy | (Arm Velocity + Movement Range + Vertical Motion) / 3 |
+| Control | (Symmetry + Rhythm Consistency) / 2 |
+| Groove | (Rhythm Strength + Rhythm Consistency) / 2 |
+| Flow | 1 - Stillness Ratio |
+
+### Dancer Archetypes
+
+Based on highest summary score:
+
+- **Energetic** — high movement intensity
+- **Precise** — controlled, symmetric movement
+- **Groovy** — strong rhythmic patterns
+- **Fluid** — continuous, flowing motion
 
 ## Workflow
 
 1. `python scripts/test_skeleton.py` — verify setup
 2. `python scripts/capture.py` — record each dancer
 3. `python scripts/extract_skeleton.py --batch recordings` — extract all
-4. `python scripts/analyze.py` — compare everyone
+4. `python scripts/analyze.py --dir skeleton_data` — compare everyone
 5. `python scripts/export_video.py --batch recordings` — export shareable videos
 
 ## License
